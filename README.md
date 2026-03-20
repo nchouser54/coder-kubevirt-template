@@ -20,6 +20,8 @@ This repository now includes separate template directories:
 
 Use the directory matching your workspace OS policy when pushing templates to Coder.
 
+For image hardening and readiness details, see [`docs/image-prep-guide.md`](docs/image-prep-guide.md).
+
 ## Compatibility targets (March 2026)
 
 This template is aligned to the following baseline:
