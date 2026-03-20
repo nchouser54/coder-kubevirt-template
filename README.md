@@ -147,7 +147,11 @@ For restricted GovCloud or disconnected networks, point image and code-server UR
 
 > Note: Desktop forwarding only works if the selected VM image or startup process runs a desktop web endpoint on the configured port.
 
-For the Windows template, use a Windows qcow image URL with Cloudbase-Init support and rely on Coder web terminal + port forwarding/desktop app behavior.
+Note: If **OS image source** is `Custom URL` but the URL is left empty, the template falls back to the selected catalog OS image instead of failing with an empty DataVolume URL.
+
+Linux code-server bootstrap now validates the downloaded tarball against the release `sha256sum.txt` before extracting.
+
+For the Windows template, provide a **required** Windows qcow image URL (Cloudbase-Init support recommended) and rely on Coder web terminal + port forwarding/desktop app behavior.
 
 ## Defaults
 

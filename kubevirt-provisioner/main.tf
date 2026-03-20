@@ -102,7 +102,7 @@ locals {
   }
 
   selected_os_image_urls = merge(local.os_image_catalog[var.deployment_environment], var.os_image_urls)
-  effective_os_image_url = data.coder_parameter.os_image_source.value == "custom_url" ? data.coder_parameter.custom_os_image_url.value : data.coder_parameter.os_image.value
+  effective_os_image_url = data.coder_parameter.os_image_source.value == "custom_url" && trimspace(data.coder_parameter.custom_os_image_url.value) != "" ? data.coder_parameter.custom_os_image_url.value : data.coder_parameter.os_image.value
 }
 
 data "coder_parameter" "os_image_source" {
@@ -270,9 +270,12 @@ resource "coder_agent" "dev" {
     CODE_SERVER_VERSION="4.11.0"
     CODE_SERVER_TARBALL="code-server-${CODE_SERVER_VERSION}-linux-amd64.tar.gz"
     CODE_SERVER_URL="${var.code_server_download_base_url}/v${CODE_SERVER_VERSION}/${CODE_SERVER_TARBALL}"
+    CODE_SERVER_SHA_URL="${var.code_server_download_base_url}/v${CODE_SERVER_VERSION}/sha256sum.txt"
 
     mkdir -p /tmp/code-server
     curl -fL "${CODE_SERVER_URL}" -o "/tmp/${CODE_SERVER_TARBALL}"
+    curl -fL "${CODE_SERVER_SHA_URL}" -o /tmp/code-server-sha256sum.txt
+    grep " ${CODE_SERVER_TARBALL}$" /tmp/code-server-sha256sum.txt | sha256sum -c -
     tar -xzf "/tmp/${CODE_SERVER_TARBALL}" -C /tmp/code-server --strip-components=1
 
     /tmp/code-server/bin/code-server --auth none --port 13337 >/tmp/code-server.log 2>&1 &

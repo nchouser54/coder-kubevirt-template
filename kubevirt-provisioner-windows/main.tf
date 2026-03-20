@@ -44,10 +44,9 @@ locals {
 data "coder_parameter" "windows_image_url" {
   name         = "Windows image URL"
   display_name = "Windows QCOW image URL"
-  description  = "HTTP(S) URL to Windows qcow image (Cloudbase-Init recommended)."
+  description  = "Required: HTTP(S) URL to a Windows qcow image (Cloudbase-Init recommended)."
   type         = "string"
-  mutable      = false
-  default      = "https://artifacts.example.mil/os-images/windows/windows-server-2022.qcow2"
+  mutable      = true
   validation {
     regex = "^https?://.+$"
     error = "Windows image URL must be a valid http(s) URL."
