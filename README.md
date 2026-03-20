@@ -73,6 +73,9 @@ VMs created by this template can be accessed in the following format:
 - CentOS Stream 9
 - Rocky Linux 9
 - Automatically downloads OS drives from cloud to create disk PVCs
+- Supports custom OS image URL selection per workspace
+- Includes Coder SSH helper access
+- Optional desktop forwarding app endpoint for images configured with web desktop tooling (for example noVNC)
 
 ## Installation
 
@@ -119,6 +122,14 @@ Copy one to a local `.tfvars` file before use (these local files are intentional
 - `cp env/govcloud.tfvars.example env/govcloud.tfvars`
 
 For restricted GovCloud or disconnected networks, point image and code-server URLs to internal mirrors/artifact repositories.
+
+## Custom images, SSH, and desktop forwarding
+
+- **Custom images:** In workspace parameters, set **OS image source** to `Custom URL` and provide **Custom OS image URL**.
+- **SSH access:** SSH helper is enabled by default in the template (`display_apps.ssh_helper = true`).
+- **Desktop forwarding:** Set **Enable desktop forwarding app** to true and choose the **Desktop forwarding port** (default `6080`).
+
+> Note: Desktop forwarding only works if the selected VM image or startup process runs a desktop web endpoint on the configured port.
 
 ## Defaults
 

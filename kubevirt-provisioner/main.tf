@@ -102,6 +102,38 @@ locals {
   }
 
   selected_os_image_urls = merge(local.os_image_catalog[var.deployment_environment], var.os_image_urls)
+  effective_os_image_url = data.coder_parameter.os_image_source.value == "custom_url" ? data.coder_parameter.custom_os_image_url.value : data.coder_parameter.os_image.value
+}
+
+data "coder_parameter" "os_image_source" {
+  name         = "OS image source"
+  type         = "string"
+  description  = "Choose catalog image or a custom qcow URL"
+  default      = "catalog"
+  mutable      = true
+
+  option {
+    name  = "Catalog image"
+    value = "catalog"
+  }
+
+  option {
+    name  = "Custom URL"
+    value = "custom_url"
+  }
+}
+
+data "coder_parameter" "custom_os_image_url" {
+  name        = "Custom OS image URL"
+  type        = "string"
+  description = "Used when OS image source is Custom URL. Must be an http(s) qcow/IMG endpoint reachable by the cluster."
+  default     = ""
+  mutable     = true
+
+  validation {
+    regex = "^(|https?://.+)$"
+    error = "Custom OS image URL must be empty or a valid http(s) URL."
+  }
 }
 
 data "coder_parameter" "os_image" {
@@ -201,6 +233,29 @@ data "coder_parameter" "disk_size" {
   order   = 3
 }
 
+data "coder_parameter" "enable_desktop_app" {
+  name        = "Enable desktop forwarding app"
+  type        = "bool"
+  description = "Adds a Coder app that points to a desktop web endpoint running inside the VM (for example noVNC)."
+  default     = false
+  mutable     = true
+  order       = 4
+}
+
+data "coder_parameter" "desktop_port" {
+  name        = "Desktop forwarding port"
+  type        = "number"
+  description = "Port used by the desktop forwarding app when enabled."
+  default     = 6080
+  mutable     = true
+  order       = 5
+
+  validation {
+    min = 1
+    max = 65535
+  }
+}
+
 resource "coder_agent" "dev" {
   count = data.coder_workspace.me.start_count
   arch                   = "amd64"
@@ -265,6 +320,17 @@ resource "coder_app" "code-server" {
     interval  = 3
     threshold = 10
   }
+}
+
+resource "coder_app" "desktop" {
+  count        = data.coder_workspace.me.start_count * (data.coder_parameter.enable_desktop_app.value ? 1 : 0)
+  agent_id     = try(coder_agent.dev[0].id, "")
+  slug         = "desktop-${local.workspace_owner}-${local.workspace_name}"
+  display_name = "Desktop"
+  icon         = "/icon/desktop.svg"
+  url          = "http://localhost:${data.coder_parameter.desktop_port.value}"
+  subdomain    = true
+  share        = "owner"
 }
 
 # cloud init user data and coder agent api token is stored in secret
@@ -399,7 +465,7 @@ resource "kubernetes_manifest" "datavolume" {
       }
       "source" = {
         "http" = {
-          "url" = "${data.coder_parameter.os_image.value}"
+          "url" = local.effective_os_image_url
         }
       }
     }
