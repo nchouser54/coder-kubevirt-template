@@ -1,0 +1,15 @@
+deployment_environment = "govcloud"
+
+# For restricted/air-gapped GovCloud environments, point these to
+# approved internal artifact locations.
+code_server_download_base_url = "https://artifacts.example.mil/code-server/releases/download"
+
+os_image_urls = {
+  ubuntu_2204     = "https://artifacts.example.mil/os-images/ubuntu/jammy-server-cloudimg-amd64-disk-kvm.img"
+  fedora_39       = "https://artifacts.example.mil/os-images/fedora/Fedora-Cloud-Base-39-1.5.x86_64.qcow2"
+  debian_12       = "https://artifacts.example.mil/os-images/debian/debian-12-genericcloud-amd64.qcow2"
+  arch_latest     = "https://artifacts.example.mil/os-images/arch/Arch-Linux-x86_64-cloudimg.qcow2"
+  almalinux_9     = "https://artifacts.example.mil/os-images/almalinux/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2"
+  centos_stream_9 = "https://artifacts.example.mil/os-images/centos/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
+  rocky_9         = "https://artifacts.example.mil/os-images/rocky/Rocky-9-GenericCloud.latest.x86_64.qcow2"
+}

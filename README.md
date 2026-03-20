@@ -95,7 +95,30 @@ coder templates push .
 - This template now uses `coder_workspace_owner` for workspace owner identity in resource naming.
 - `coder_agent` startup behavior uses provider v2-compatible fields.
 - Resource names are normalized to lowercase for Kubernetes DNS compatibility.
+- This template supports `deployment_environment` profiles (`commercial` and `govcloud`) and artifact URL overrides for restricted networks.
 - If you are upgrading from an older version of this template, run a plan first and review resource name diffs carefully before applying.
+
+## Commercial vs GovCloud configuration
+
+This template can run in both Commercial and GovCloud by selecting an environment profile and (optionally) overriding artifact sources.
+
+Terraform variables added for this purpose:
+
+- `deployment_environment` (default: `commercial`, allowed: `commercial`, `govcloud`)
+- `os_image_urls` (map override for qcow image URLs)
+- `code_server_download_base_url` (default: GitHub releases URL)
+
+Example variable files are provided under `kubevirt-provisioner/env/`:
+
+- `commercial.tfvars.example`
+- `govcloud.tfvars.example`
+
+Copy one to a local `.tfvars` file before use (these local files are intentionally git-ignored):
+
+- `cp env/commercial.tfvars.example env/commercial.tfvars`
+- `cp env/govcloud.tfvars.example env/govcloud.tfvars`
+
+For restricted GovCloud or disconnected networks, point image and code-server URLs to internal mirrors/artifact repositories.
 
 ## Defaults
 

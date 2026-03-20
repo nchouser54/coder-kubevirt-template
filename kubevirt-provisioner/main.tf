@@ -33,6 +33,29 @@ variable "use_kubeconfig" {
   default     = false
 }
 
+variable "deployment_environment" {
+  type        = string
+  description = "Deployment environment profile used for defaults (commercial or govcloud)."
+  default     = "commercial"
+
+  validation {
+    condition     = contains(["commercial", "govcloud"], var.deployment_environment)
+    error_message = "deployment_environment must be one of: commercial, govcloud."
+  }
+}
+
+variable "os_image_urls" {
+  type        = map(string)
+  description = "Optional override map of OS qcow image URLs by key (ubuntu_2204, fedora_39, debian_12, arch_latest, almalinux_9, centos_stream_9, rocky_9)."
+  default     = {}
+}
+
+variable "code_server_download_base_url" {
+  type        = string
+  description = "Base URL for code-server release artifacts. Override with an internal mirror for restricted environments."
+  default     = "https://github.com/coder/code-server/releases/download"
+}
+
 provider "coder" {
 }
 
@@ -54,47 +77,72 @@ locals {
 
   cloudinit_secret_name = "${local.workspace_id}-cloudinit"
   rootfs_name           = "${local.workspace_id}-rootfs"
+
+  os_image_catalog = {
+    commercial = {
+      ubuntu_2204     = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64-disk-kvm.img"
+      fedora_39       = "https://download.fedoraproject.org/pub/fedora/linux/releases/39/Cloud/x86_64/images/Fedora-Cloud-Base-39-1.5.x86_64.qcow2"
+      debian_12       = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2"
+      arch_latest     = "https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2"
+      almalinux_9     = "https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2"
+      centos_stream_9 = "https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
+      rocky_9         = "https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2"
+    }
+    govcloud = {
+      # Defaults mirror commercial public endpoints. For restricted GovCloud,
+      # override via var.os_image_urls to internal artifact locations.
+      ubuntu_2204     = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64-disk-kvm.img"
+      fedora_39       = "https://download.fedoraproject.org/pub/fedora/linux/releases/39/Cloud/x86_64/images/Fedora-Cloud-Base-39-1.5.x86_64.qcow2"
+      debian_12       = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2"
+      arch_latest     = "https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2"
+      almalinux_9     = "https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2"
+      centos_stream_9 = "https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
+      rocky_9         = "https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2"
+    }
+  }
+
+  selected_os_image_urls = merge(local.os_image_catalog[var.deployment_environment], var.os_image_urls)
 }
 
 data "coder_parameter" "os_image" {
     name = "os_image"
     display_name = "OS Image"
     description = "OS Image type should your workspace use?"
-    default = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64-disk-kvm.img"
+  default = local.selected_os_image_urls.ubuntu_2204
     mutable = false
     option {
         name = "Ubuntu 22.04"
-        value = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64-disk-kvm.img"
+    value = local.selected_os_image_urls.ubuntu_2204
         icon = "/icon/ubuntu.svg"
     }
     option {
         name = "Fedora 39"
-        value = "https://download.fedoraproject.org/pub/fedora/linux/releases/39/Cloud/x86_64/images/Fedora-Cloud-Base-39-1.5.x86_64.qcow2"
+    value = local.selected_os_image_urls.fedora_39
         icon = "/icon/fedora.svg"
     }
     option {
         name = "Debian 12"
-        value = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2"
+    value = local.selected_os_image_urls.debian_12
         icon = "/icon/debian.svg"
     }
     option {
         name = "Arch Linux"
-        value = "https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2"
+    value = local.selected_os_image_urls.arch_latest
         icon = "https://cdn0.iconfinder.com/data/icons/flat-round-system/512/archlinux-512.png"
     }
     option {
         name = "AlmaLinux 9"
-        value = "https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2"
+    value = local.selected_os_image_urls.almalinux_9
         icon = "/icon/almalinux.svg"
     }
     option {
         name = "CentOS Stream 9"
-        value = "https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2"
+    value = local.selected_os_image_urls.centos_stream_9
         icon = "/icon/centos.svg"
     }
     option {
         name = "Rocky Linux 9"
-        value = "https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2"
+    value = local.selected_os_image_urls.rocky_9
         icon = "/icon/rockylinux.svg"
     }
 }
@@ -166,7 +214,7 @@ resource "coder_agent" "dev" {
     # install and start code-server from a pinned release asset
     CODE_SERVER_VERSION="4.11.0"
     CODE_SERVER_TARBALL="code-server-${CODE_SERVER_VERSION}-linux-amd64.tar.gz"
-    CODE_SERVER_URL="https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/${CODE_SERVER_TARBALL}"
+    CODE_SERVER_URL="${var.code_server_download_base_url}/v${CODE_SERVER_VERSION}/${CODE_SERVER_TARBALL}"
 
     mkdir -p /tmp/code-server
     curl -fL "${CODE_SERVER_URL}" -o "/tmp/${CODE_SERVER_TARBALL}"

@@ -1,0 +1,6 @@
+deployment_environment = "commercial"
+
+# Uses public defaults for OS images and code-server downloads.
+# Override if you maintain an internal mirror.
+# code_server_download_base_url = "https://github.com/coder/code-server/releases/download"
+# os_image_urls = {}
