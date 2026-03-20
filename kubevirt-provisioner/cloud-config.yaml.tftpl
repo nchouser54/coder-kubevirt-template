@@ -4,11 +4,11 @@ hostname: ${hostname}
 fqdn: ${hostname}.coder.company
 users:
   - name: ${username}
-    passwd: $y$j9T$7rB9aUNSRJTEzm8t7qjdd1$klhw8gB81nd.6Q/T2EXu/bgiMjxPRWSHf1u8ZXloYf3
-    lock_passwd: false
+    lock_passwd: true
     sudo: ["ALL=(ALL) NOPASSWD:ALL"]
     groups: sudo
     shell: /bin/bash
+ssh_pwauth: false
 packages:
   - git
 write_files:

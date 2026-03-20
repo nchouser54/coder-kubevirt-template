@@ -2,11 +2,11 @@ terraform {
   required_providers {
     coder = {
       source  = "coder/coder"
-      version = "0.13.0"
+      version = "~> 2.15.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "2.25.2"
+      version = "~> 3.0.1"
     }
   }
 }
@@ -42,6 +42,18 @@ provider "kubernetes" {
 
 data "coder_workspace" "me" {
 
+}
+
+data "coder_workspace_owner" "me" {
+}
+
+locals {
+  workspace_owner = lower(data.coder_workspace_owner.me.name)
+  workspace_name  = lower(data.coder_workspace.me.name)
+  workspace_id    = "coder-${local.workspace_owner}-${local.workspace_name}"
+
+  cloudinit_secret_name = "${local.workspace_id}-cloudinit"
+  rootfs_name           = "${local.workspace_id}-rootfs"
 }
 
 data "coder_parameter" "os_image" {
@@ -147,12 +159,19 @@ resource "coder_agent" "dev" {
   auth                   = "token"
   dir                    = "/home/${data.coder_parameter.linux_user.value}"
   os                     = "linux"
-  startup_script_timeout = 300
+  startup_script_behavior = "blocking"
   startup_script         = <<EOT
-    set -e
+    set -euo pipefail
 
-    # install and start code-server
-    curl -fsSL https://code-server.dev/install.sh | sh -s -- --method=standalone --prefix=/tmp/code-server --version 4.11.0
+    # install and start code-server from a pinned release asset
+    CODE_SERVER_VERSION="4.11.0"
+    CODE_SERVER_TARBALL="code-server-${CODE_SERVER_VERSION}-linux-amd64.tar.gz"
+    CODE_SERVER_URL="https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/${CODE_SERVER_TARBALL}"
+
+    mkdir -p /tmp/code-server
+    curl -fL "${CODE_SERVER_URL}" -o "/tmp/${CODE_SERVER_TARBALL}"
+    tar -xzf "/tmp/${CODE_SERVER_TARBALL}" -C /tmp/code-server --strip-components=1
+
     /tmp/code-server/bin/code-server --auth none --port 13337 >/tmp/code-server.log 2>&1 &
   EOT
 
@@ -188,7 +207,7 @@ resource "coder_agent" "dev" {
 
 resource "coder_app" "code-server" {
   agent_id     = try(coder_agent.dev[0].id, "")
-  slug         = "code-server-${data.coder_workspace.me.owner}-${data.coder_workspace.me.name}"
+  slug         = "code-server-${local.workspace_owner}-${local.workspace_name}"
   display_name = "code-server"
   icon         = "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/Visual_Studio_Code_1.35_icon.svg/2560px-Visual_Studio_Code_1.35_icon.svg.png"
   url          = "http://localhost:13337/?folder=/home/${data.coder_parameter.linux_user.value}"
@@ -205,12 +224,12 @@ resource "coder_app" "code-server" {
 resource "kubernetes_secret" "cloudinit-secret" {
   count = data.coder_workspace.me.transition == "start" ? 1 : 0
   metadata {
-    name      = "coder-${data.coder_workspace.me.owner}-${data.coder_workspace.me.name}-cloudinit"
+    name      = local.cloudinit_secret_name
     namespace = var.namespace
   }
   data = {
     userdata = templatefile("cloud-config.yaml.tftpl", {
-      hostname = lower(data.coder_workspace.me.name)
+      hostname = local.workspace_name
       username = lower(data.coder_parameter.linux_user.value)
       init_script = base64encode(try(coder_agent.dev[0].init_script, ""))
       coder_agent_token = try(coder_agent.dev[0].token, "")
@@ -220,14 +239,18 @@ resource "kubernetes_secret" "cloudinit-secret" {
 
 resource "kubernetes_manifest" "virtualmachine" {
   count = data.coder_workspace.me.transition == "start" ? 1 : 0
+  depends_on = [
+    kubernetes_manifest.datavolume,
+    kubernetes_secret.cloudinit-secret,
+  ]
   manifest = {
     "apiVersion" = "kubevirt.io/v1"
     "kind"       = "VirtualMachine"
     "metadata" = {
       "labels" = {
-        "kubevirt.io/vm" = "coder-${data.coder_workspace.me.owner}-${data.coder_workspace.me.name}"
+        "kubevirt.io/vm" = local.workspace_id
       }
-      "name"      = "coder-${data.coder_workspace.me.owner}-${data.coder_workspace.me.name}"
+      "name"      = local.workspace_id
       "namespace" = "${var.namespace}"
     }
     "spec" = {
@@ -236,7 +259,7 @@ resource "kubernetes_manifest" "virtualmachine" {
         "metadata" = {
           "creationTimestamp" = null
           "labels" = {
-            "kubevirt.io/vm" = "coder-${data.coder_workspace.me.owner}-${data.coder_workspace.me.name}"
+            "kubevirt.io/vm" = local.workspace_id
           }
         }
         "spec" = {
@@ -247,7 +270,7 @@ resource "kubernetes_manifest" "virtualmachine" {
                   "disk" = {
                     "bus" = "virtio"
                   }
-                  "name" = "coder-${data.coder_workspace.me.owner}-${data.coder_workspace.me.name}-rootfs"
+                  "name" = local.rootfs_name
                 },
                 {
                   "disk" = {
@@ -280,9 +303,9 @@ resource "kubernetes_manifest" "virtualmachine" {
           "volumes" = [
             {
               "dataVolume" = {
-                "name" = "coder-${data.coder_workspace.me.owner}-${data.coder_workspace.me.name}-rootfs"
+                "name" = local.rootfs_name
               }
-              "name" = "coder-${data.coder_workspace.me.owner}-${data.coder_workspace.me.name}-rootfs"
+              "name" = local.rootfs_name
             },
             {
               "cloudInitNoCloud" = {
@@ -295,7 +318,7 @@ resource "kubernetes_manifest" "virtualmachine" {
                       dhcp4: true
                 EOT
                 "secretRef" = {
-                  name = "coder-${data.coder_workspace.me.owner}-${data.coder_workspace.me.name}-cloudinit"
+                  name = local.cloudinit_secret_name
                 }
               }
               "name" = "cloudinitdisk"
@@ -312,7 +335,7 @@ resource "kubernetes_manifest" "datavolume" {
     "apiVersion" = "cdi.kubevirt.io/v1beta1"
     "kind"       = "DataVolume"
     "metadata" = {
-      "name"      = "coder-${data.coder_workspace.me.owner}-${data.coder_workspace.me.name}-rootfs"
+      "name"      = local.rootfs_name
       "namespace" = "${var.namespace}"
     }
     "spec" = {
@@ -338,17 +361,18 @@ resource "kubernetes_manifest" "datavolume" {
 # expose the vm via kubernetes service
 # exposed in the following format coder-<owner>-<workspace-name>.<namespace>.svc.cluster.local
 resource "kubernetes_manifest" "service" {
+  depends_on = [kubernetes_manifest.virtualmachine]
   manifest = {
     "apiVersion" = "v1"
     "kind" = "Service"
     "metadata" = {
-      "name"      = "coder-${data.coder_workspace.me.owner}-${data.coder_workspace.me.name}"
+      "name"      = local.workspace_id
       "namespace" = "${var.namespace}"
     }
     "spec" = {
       "clusterIP" = "None"
       "selector" = {
-        "kubevirt.io/vm" = "coder-${data.coder_workspace.me.owner}-${data.coder_workspace.me.name}"
+        "kubevirt.io/vm" = local.workspace_id
       }
     }
   }

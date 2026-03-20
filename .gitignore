@@ -36,3 +36,7 @@ terraform.rc
 
 # Ignore local terraform file -- don't add this in your gitignore
 .terraform.lock.hcl
+
+# macOS metadata
+.DS_Store
+._*

@@ -1,5 +1,6 @@
 
 # Coder Kubevirt Template
+
 [![Apache 2.0 License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://choosealicense.com/licenses/apache-2.0/)
 
 This project is a template to create reproducible dev environments in [Coder](https://github.com/coder/coder) using [Kubevirt](https://github.com/kubevirt/kubevirt) running on a Kubernetes cluster.
@@ -10,26 +11,43 @@ KubeVirt is a virtual machine management add-on for Kubernetes. The aim is to pr
 
 Read below for motive.
 
+## Compatibility targets (March 2026)
+
+This template is aligned to the following baseline:
+
+| Component | Target |
+| --- | --- |
+| Coder channel | Stable |
+| Coder server | v2.30.x |
+| Terraform Coder provider | `coder/coder ~> 2.15.0` |
+| Terraform Kubernetes provider | `hashicorp/kubernetes ~> 3.0.1` |
+| KubeVirt | 1.7.x |
+| Kubernetes | 1.34 (primary), 1.33/1.32 compatible via KubeVirt matrix |
+
+See KubeVirt Kubernetes compatibility matrix: [k8s-support-matrix](https://github.com/kubevirt/sig-release/blob/main/releases/k8s-support-matrix.md)
+
 ## Pre-requisites
+
 - A running kubernetes cluster with Kubevirt deployed. See Kubevirt [installation guide](https://kubevirt.io/user-guide/operations/installation).
 - Containerized Data Importer (CDI) should be installed in the kubernetes cluster for PVC management. See CDI [installation guide](https://kubevirt.io/user-guide/operations/containerized_data_importer/).
 - Default storage class configured in the kubernetes cluster.
 - Bare-metal kubernetes cluster preferred. For kubernetes clusters running on top of VMs, nested-virtualization support is required.
 
-#### Kubernetes API Access Pre-requisite
+### Kubernetes API Access Pre-requisite
+
 If the Coder host is running outside the Kubernetes cluster (where workspace VMs will be deployed), a valid "~/.kube/config" must be present on the Coder host.
 
-If Coder host is deployed on the same Kubernetes cluster (where workspace VMs will be deployed), a service account provisioned by coder will be used for workspace deployments. 
+If Coder host is deployed on the same Kubernetes cluster (where workspace VMs will be deployed), a service account provisioned by coder will be used for workspace deployments.
 
 In both cases, the service-account/user(in the kubeconfig) should have bindings for following roles:
 
-| type        	| apiGroups            	| resources                 	| verbs            	| namespace                                      	|
-|-------------	|----------------------	|---------------------------	|------------------	|------------------------------------------------	|
-| clusterrole 	| apiextensions.k8s.io 	| customresourcedefinitions 	| get, list, watch 	| -                                              	|
-| clusterrole 	| kubevirt.io          	| virtualmachines           	| *                	| -                                              	|
-| clusterrole 	| cdi.kubevirt.io      	| datavolumes               	| *                	| -                                              	|
-| role        	| ""                   	| secrets                   	| *                	| namespace where workspace VMs will be deployed 	|
-| role        	| ""                   	| services                   	| *                	| namespace where workspace VMs will be deployed 	|
+| type | apiGroups | resources | verbs | namespace |
+| --- | --- | --- | --- | --- |
+| clusterrole | apiextensions.k8s.io | customresourcedefinitions | get, list, watch | - |
+| clusterrole | kubevirt.io | virtualmachines | * | - |
+| clusterrole | cdi.kubevirt.io | datavolumes | * | - |
+| role | "" | secrets | * | namespace where workspace VMs will be deployed |
+| role | "" | services | * | namespace where workspace VMs will be deployed |
 
 Permission to access secret in the namespace where VMs are deployed is required to store cloud-init configs. This secret is then mount to workspace VMs as a cloud-init drive. Kubevirt only supports 2048 byte cloud-init config if set as string. To overcome this limit, Kubernetes secrets are used.
 
@@ -46,29 +64,41 @@ VMs created by this template can be accessed in the following format:
 - Code server is enabled by default
 - SSH is configured
 - VMs can be started/stopped/restarted from Coder webapp without losing data
-- Major Linux distributions are pre-configured
-    - Ubuntu 22.04
-    - Debian 12
-    - Fedora 39
-    - Arch Linux
-    - AlmaLinux 9
-    - CentOS Stream 9
-    - Rocky Linux 9
+- Includes pre-configured Linux distributions:
+- Ubuntu 22.04
+- Debian 12
+- Fedora 39
+- Arch Linux
+- AlmaLinux 9
+- CentOS Stream 9
+- Rocky Linux 9
 - Automatically downloads OS drives from cloud to create disk PVCs
 
-## Installation 
+## Installation
+
 This installation assumes you have a Coder deployment running and CLI authenticated.
 
 - Clone this repository
+
 ```sh
 git clone https://github.com/sulo1337/coder-kubevirt-template.git && cd coder-kubevirt-template/kubevirt-provisioner
 ```
+
 - Push the template
+
 ```sh
 coder templates push .
 ```
 
+## Upgrade notes
+
+- This template now uses `coder_workspace_owner` for workspace owner identity in resource naming.
+- `coder_agent` startup behavior uses provider v2-compatible fields.
+- Resource names are normalized to lowercase for Kubernetes DNS compatibility.
+- If you are upgrading from an older version of this template, run a plan first and review resource name diffs carefully before applying.
+
 ## Defaults
+
 These are the default values configured in the template. These values can be changed based on the requirements
 
 - CPU - 2 cores
@@ -77,27 +107,33 @@ These are the default values configured in the template. These values can be cha
 - Network configured in masquerade mode. See [kubevirt networking documentation](https://kubevirt.io/user-guide/virtual_machines/interfaces_and_networks/) for more details
 
 ## Roadmap
+
 - Enable sourcing disk PVC creations from another PVC. Currently disk PVC data is sourced from qcow2 cloud images of various OS. This feature will allow a cluster administrator to pre-configure bootable image of an OS as PVC and use that PVC as a source to create new VM disk.
 - Windows OS as VMs
-- VNC 
-- Multi-disk VMs 
+- VNC
+- Multi-disk VMs
 - Shared disks as PVC attached to VMs allowing dev workspaces to share files.
 
 ## Notes
+
 - Management of Kubevirt is out of scope of this repository
 - VolumeSnapshot and PVC backups of VM disks is out of scope of this repository
-
+- Default cloud-init is hardened: password login is disabled (`lock_passwd: true`, `ssh_pwauth: false`)
+- code-server is installed from a pinned release artifact URL (no `curl | sh`)
+- code-server runs with `--auth none` inside the VM and is expected to be accessed through Coder's authenticated workspace access path
 
 ## Motive
-I created this template because of three reasons. 
+
+I created this template because of three reasons.
+
 - To safely allow container runtimes to run inside coder workspace
 - To utilize existing Kubernetes cluster to provision workspaces capable of running native container workloads
 - To use existing bare-metal infrastructure for provisioning coder workspaces instead of using cloud providers (AWS, Azure etc)
 
 There are other benefits to using Virtual Machine vs Containers for dev environments which is out of scope for this documentation.
 
-
 Workspaces provisioned by Coder in Kubernetes are container environments in a pod. Most modern software development requires use of containerization technologies like Docker as a part of development workflow. According to [Coder Docs](https://coder.com/docs/v2/latest/templates/docker-in-workspaces), there are multiple ways to run container environments inside pods provisioned by Coder:
+
 - Sysbox container runtime (needs specific infrastructure configuration, and enterprise license for [more features](https://github.com/nestybox/sysbox/blob/master/docs/figures/sysbox-features.png))
 - Envbox*
 - Rootless podman*
@@ -106,6 +142,7 @@ Workspaces provisioned by Coder in Kubernetes are container environments in a po
 *All of these methods either will make you create a privileged pod inside your cluster or have some privileged wrapper around your workspace (except rootless podman). Limitations of using rootless podman is out of scope for this documentation.
 
 I created this template to extend Coder's functionality to provision VMs on existing Kubernetes clusters. KVM machines being used as coder workspaces unlocks these functionalities:
+
 - docker inside coder workspaces
 - systemd
 - mini kubernetes environments inside coder workspaces using [minikube](https://github.com/kubernetes/minikube) or [kind](https://github.com/kubernetes-sigs/kind)
