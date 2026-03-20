@@ -11,6 +11,15 @@ KubeVirt is a virtual machine management add-on for Kubernetes. The aim is to pr
 
 Read below for motive.
 
+## Template variants
+
+This repository now includes separate template directories:
+
+- `kubevirt-provisioner/` → Linux workspace template
+- `kubevirt-provisioner-windows/` → Windows workspace template (experimental)
+
+Use the directory matching your workspace OS policy when pushing templates to Coder.
+
 ## Compatibility targets (March 2026)
 
 This template is aligned to the following baseline:
@@ -87,9 +96,16 @@ This installation assumes you have a Coder deployment running and CLI authentica
 git clone https://github.com/sulo1337/coder-kubevirt-template.git && cd coder-kubevirt-template/kubevirt-provisioner
 ```
 
-- Push the template
+- Push the Linux template
 
 ```sh
+coder templates push .
+```
+
+- Push the Windows template (from repo root)
+
+```sh
+cd kubevirt-provisioner-windows
 coder templates push .
 ```
 
@@ -130,6 +146,8 @@ For restricted GovCloud or disconnected networks, point image and code-server UR
 - **Desktop forwarding:** Set **Enable desktop forwarding app** to true and choose the **Desktop forwarding port** (default `6080`).
 
 > Note: Desktop forwarding only works if the selected VM image or startup process runs a desktop web endpoint on the configured port.
+
+For the Windows template, use a Windows qcow image URL with Cloudbase-Init support and rely on Coder web terminal + port forwarding/desktop app behavior.
 
 ## Defaults
 

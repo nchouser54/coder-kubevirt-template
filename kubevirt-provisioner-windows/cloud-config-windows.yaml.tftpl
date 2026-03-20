@@ -1,0 +1,14 @@
+#cloud-config
+hostname: ${hostname}
+write_files:
+  - path: C:\ProgramData\coder\init.ps1
+    permissions: "0644"
+    encoding: b64
+    content: ${init_script}
+  - path: C:\ProgramData\coder\run-init.ps1
+    permissions: "0644"
+    content: |
+      $env:CODER_AGENT_TOKEN = "${coder_agent_token}"
+      powershell -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\coder\init.ps1
+runcmd:
+  - powershell -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\coder\run-init.ps1
