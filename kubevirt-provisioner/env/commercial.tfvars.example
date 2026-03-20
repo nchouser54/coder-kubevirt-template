@@ -4,3 +4,8 @@ deployment_environment = "commercial"
 # Override if you maintain an internal mirror.
 # code_server_download_base_url = "https://github.com/coder/code-server/releases/download"
 # os_image_urls = {}
+
+# Optional hardening controls
+# govcloud_strict_mode = false
+# strict_allowed_url_prefixes = ["https://artifacts.example.com/"]
+# enable_preflight_url_checks = true

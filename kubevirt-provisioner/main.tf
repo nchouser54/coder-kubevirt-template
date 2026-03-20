@@ -44,16 +44,49 @@ variable "deployment_environment" {
   }
 }
 
+variable "govcloud_strict_mode" {
+  type        = bool
+  description = "When true, enforce strict URL policy checks for OS image and code-server artifact sources."
+  default     = false
+}
+
+variable "strict_allowed_url_prefixes" {
+  type        = list(string)
+  description = "Allowed URL prefixes enforced when govcloud_strict_mode is true (for example https://artifacts.internal.example/)."
+  default     = []
+
+  validation {
+    condition     = alltrue([for prefix in var.strict_allowed_url_prefixes : can(regex("^https://.+$", prefix))])
+    error_message = "strict_allowed_url_prefixes values must be valid https:// URL prefixes."
+  }
+}
+
 variable "os_image_urls" {
   type        = map(string)
   description = "Optional override map of OS qcow image URLs by key (ubuntu_2204, fedora_39, debian_12, arch_latest, almalinux_9, centos_stream_9, rocky_9)."
   default     = {}
+
+  validation {
+    condition     = alltrue([for url in values(var.os_image_urls) : can(regex("^https://.+$", url))])
+    error_message = "All os_image_urls entries must be valid https:// URLs."
+  }
 }
 
 variable "code_server_download_base_url" {
   type        = string
   description = "Base URL for code-server release artifacts. Override with an internal mirror for restricted environments."
   default     = "https://github.com/coder/code-server/releases/download"
+
+  validation {
+    condition     = can(regex("^https://.+$", var.code_server_download_base_url))
+    error_message = "code_server_download_base_url must be a valid https:// URL."
+  }
+}
+
+variable "enable_preflight_url_checks" {
+  type        = bool
+  description = "Run local preflight HEAD checks for required image/artifact URLs before creating DataVolume/VM resources."
+  default     = true
 }
 
 provider "coder" {
@@ -103,6 +136,12 @@ locals {
 
   selected_os_image_urls = merge(local.os_image_catalog[var.deployment_environment], var.os_image_urls)
   effective_os_image_url = data.coder_parameter.os_image_source.value == "custom_url" && trimspace(data.coder_parameter.custom_os_image_url.value) != "" ? data.coder_parameter.custom_os_image_url.value : data.coder_parameter.os_image.value
+  strict_mode_image_allowed = length(var.strict_allowed_url_prefixes) > 0 && anytrue([
+    for prefix in var.strict_allowed_url_prefixes : startswith(local.effective_os_image_url, prefix)
+  ])
+  strict_mode_code_server_allowed = length(var.strict_allowed_url_prefixes) > 0 && anytrue([
+    for prefix in var.strict_allowed_url_prefixes : startswith(var.code_server_download_base_url, prefix)
+  ])
 }
 
 data "coder_parameter" "os_image_source" {
@@ -268,15 +307,15 @@ resource "coder_agent" "dev" {
 
     # install and start code-server from a pinned release asset
     CODE_SERVER_VERSION="4.11.0"
-    CODE_SERVER_TARBALL="code-server-${CODE_SERVER_VERSION}-linux-amd64.tar.gz"
-    CODE_SERVER_URL="${var.code_server_download_base_url}/v${CODE_SERVER_VERSION}/${CODE_SERVER_TARBALL}"
-    CODE_SERVER_SHA_URL="${var.code_server_download_base_url}/v${CODE_SERVER_VERSION}/sha256sum.txt"
+    CODE_SERVER_TARBALL="code-server-$${CODE_SERVER_VERSION}-linux-amd64.tar.gz"
+    CODE_SERVER_URL="${var.code_server_download_base_url}/v$${CODE_SERVER_VERSION}/$${CODE_SERVER_TARBALL}"
+    CODE_SERVER_SHA_URL="${var.code_server_download_base_url}/v$${CODE_SERVER_VERSION}/sha256sum.txt"
 
     mkdir -p /tmp/code-server
-    curl -fL "${CODE_SERVER_URL}" -o "/tmp/${CODE_SERVER_TARBALL}"
-    curl -fL "${CODE_SERVER_SHA_URL}" -o /tmp/code-server-sha256sum.txt
-    grep " ${CODE_SERVER_TARBALL}$" /tmp/code-server-sha256sum.txt | sha256sum -c -
-    tar -xzf "/tmp/${CODE_SERVER_TARBALL}" -C /tmp/code-server --strip-components=1
+    curl -fL "$${CODE_SERVER_URL}" -o "/tmp/$${CODE_SERVER_TARBALL}"
+    curl -fL "$${CODE_SERVER_SHA_URL}" -o /tmp/code-server-sha256sum.txt
+    grep " $${CODE_SERVER_TARBALL}$" /tmp/code-server-sha256sum.txt | sha256sum -c -
+    tar -xzf "/tmp/$${CODE_SERVER_TARBALL}" -C /tmp/code-server --strip-components=1
 
     /tmp/code-server/bin/code-server --auth none --port 13337 >/tmp/code-server.log 2>&1 &
   EOT
@@ -308,6 +347,38 @@ resource "coder_agent" "dev" {
     web_terminal    = true
     ssh_helper      = true
     port_forwarding_helper = true
+  }
+
+  lifecycle {
+    precondition {
+      condition     = !var.govcloud_strict_mode || local.strict_mode_code_server_allowed
+      error_message = "govcloud_strict_mode is enabled and code_server_download_base_url is not allowed by strict_allowed_url_prefixes."
+    }
+  }
+}
+
+resource "terraform_data" "preflight_urls" {
+  count = data.coder_workspace.me.transition == "start" && var.enable_preflight_url_checks ? 1 : 0
+
+  input = {
+    effective_os_image_url      = local.effective_os_image_url
+    code_server_sha256sum_url   = "${var.code_server_download_base_url}/v4.11.0/sha256sum.txt"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = !var.govcloud_strict_mode || (local.strict_mode_image_allowed && local.strict_mode_code_server_allowed)
+      error_message = "govcloud_strict_mode is enabled: effective OS image URL and code-server base URL must both match strict_allowed_url_prefixes."
+    }
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+      curl -fsSLI "${self.input.effective_os_image_url}" >/dev/null
+      curl -fsSLI "${self.input.code_server_sha256sum_url}" >/dev/null
+    EOT
   }
 }
 
@@ -448,6 +519,7 @@ resource "kubernetes_manifest" "virtualmachine" {
 }
 
 resource "kubernetes_manifest" "datavolume" {
+  depends_on = [terraform_data.preflight_urls]
   manifest = {
     "apiVersion" = "cdi.kubevirt.io/v1beta1"
     "kind"       = "DataVolume"

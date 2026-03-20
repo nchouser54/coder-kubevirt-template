@@ -88,6 +88,23 @@ This repository provisions KubeVirt VMs from **QCOW image URLs** (via CDI DataVo
 - Enforce max CPU/memory/disk workspace bounds
 - Enforce required labels/tags for compliance and cost attribution
 
+### GovCloud strictness (recommended baseline)
+
+When operating in GovCloud or similarly restricted environments:
+
+- Set `govcloud_strict_mode = true`.
+- Set `strict_allowed_url_prefixes` to approved internal HTTPS prefixes only.
+- Keep `enable_preflight_url_checks = true` so invalid/unreachable URLs fail before VM provisioning.
+- Ensure internal endpoint CAs are trusted by both:
+  - the Terraform/Coder execution host (preflight checks), and
+  - cluster importer pods (CDI DataVolume import).
+
+Example policy intent:
+
+- Allow: `https://artifacts.example.mil/`
+- Allow: `https://repo.internal.example.mil/`
+- Deny: public internet endpoints unless explicitly approved
+
 ---
 
 ## Validation before publishing an image

@@ -22,6 +22,40 @@ variable "use_kubeconfig" {
   default     = false
 }
 
+variable "deployment_environment" {
+  type        = string
+  description = "Deployment environment profile used for policy behavior (commercial or govcloud)."
+  default     = "commercial"
+
+  validation {
+    condition     = contains(["commercial", "govcloud"], var.deployment_environment)
+    error_message = "deployment_environment must be one of: commercial, govcloud."
+  }
+}
+
+variable "govcloud_strict_mode" {
+  type        = bool
+  description = "When true, enforce strict URL policy checks for Windows image source URL."
+  default     = false
+}
+
+variable "strict_allowed_url_prefixes" {
+  type        = list(string)
+  description = "Allowed URL prefixes enforced when govcloud_strict_mode is true (for example https://artifacts.internal.example/)."
+  default     = []
+
+  validation {
+    condition     = alltrue([for prefix in var.strict_allowed_url_prefixes : can(regex("^https://.+$", prefix))])
+    error_message = "strict_allowed_url_prefixes values must be valid https:// URL prefixes."
+  }
+}
+
+variable "enable_preflight_url_checks" {
+  type        = bool
+  description = "Run local preflight HEAD checks for required image URLs before creating DataVolume/VM resources."
+  default     = true
+}
+
 provider "coder" {}
 
 provider "kubernetes" {
@@ -39,6 +73,9 @@ locals {
 
   cloudinit_secret_name = "${local.workspace_id}-cloudinit"
   rootfs_name           = "${local.workspace_id}-rootfs"
+  strict_mode_windows_image_allowed = length(var.strict_allowed_url_prefixes) > 0 && anytrue([
+    for prefix in var.strict_allowed_url_prefixes : startswith(data.coder_parameter.windows_image_url.value, prefix)
+  ])
 }
 
 data "coder_parameter" "windows_image_url" {
@@ -195,7 +232,39 @@ resource "kubernetes_secret" "cloudinit-secret" {
   }
 }
 
+resource "terraform_data" "preflight_urls" {
+  count = data.coder_workspace.me.transition == "start" && var.enable_preflight_url_checks ? 1 : 0
+
+  input = {
+    windows_image_url = data.coder_parameter.windows_image_url.value
+  }
+
+  lifecycle {
+    precondition {
+      condition     = !var.govcloud_strict_mode || local.strict_mode_windows_image_allowed
+      error_message = "govcloud_strict_mode is enabled and windows_image_url is not allowed by strict_allowed_url_prefixes."
+    }
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+      curl -fsSLI "${self.input.windows_image_url}" >/dev/null
+    EOT
+  }
+}
+
 resource "kubernetes_manifest" "datavolume" {
+  depends_on = [terraform_data.preflight_urls]
+
+  lifecycle {
+    precondition {
+      condition     = !var.govcloud_strict_mode || local.strict_mode_windows_image_allowed
+      error_message = "govcloud_strict_mode is enabled and windows_image_url is not allowed by strict_allowed_url_prefixes."
+    }
+  }
+
   manifest = {
     "apiVersion" = "cdi.kubevirt.io/v1beta1"
     "kind"       = "DataVolume"

@@ -126,8 +126,11 @@ This template can run in both Commercial and GovCloud by selecting an environmen
 Terraform variables added for this purpose:
 
 - `deployment_environment` (default: `commercial`, allowed: `commercial`, `govcloud`)
-- `os_image_urls` (map override for qcow image URLs)
-- `code_server_download_base_url` (default: GitHub releases URL)
+- `os_image_urls` (map override for qcow image URLs, HTTPS only)
+- `code_server_download_base_url` (default: GitHub releases URL, HTTPS only)
+- `govcloud_strict_mode` (default: `false`; when `true`, enforces URL allowlist policy)
+- `strict_allowed_url_prefixes` (list of allowed HTTPS URL prefixes used by strict mode)
+- `enable_preflight_url_checks` (default: `true`; runs URL reachability checks before provisioning)
 
 Example variable files are provided under `kubevirt-provisioner/env/`:
 
@@ -140,6 +143,8 @@ Copy one to a local `.tfvars` file before use (these local files are intentional
 - `cp env/govcloud.tfvars.example env/govcloud.tfvars`
 
 For restricted GovCloud or disconnected networks, point image and code-server URLs to internal mirrors/artifact repositories.
+
+Recommended for GovCloud: set `govcloud_strict_mode = true` and define `strict_allowed_url_prefixes` to your approved internal domains.
 
 ## Custom images, SSH, and desktop forwarding
 
@@ -154,6 +159,31 @@ Note: If **OS image source** is `Custom URL` but the URL is left empty, the temp
 Linux code-server bootstrap now validates the downloaded tarball against the release `sha256sum.txt` before extracting.
 
 For the Windows template, provide a **required** Windows qcow image URL (Cloudbase-Init support recommended) and rely on Coder web terminal + port forwarding/desktop app behavior.
+
+## Troubleshooting DataVolume/import lifecycle
+
+If workspace startup fails around CDI or VM boot, check these common failure points:
+
+- **DataVolume stuck in `ImportScheduled`:**
+  - Confirm CDI controller is healthy.
+  - Confirm target storage class supports requested PVC mode/size.
+  - Confirm node scheduling constraints allow importer pod placement.
+- **Image download failures (`ImagePullBackOff`, HTTP/TLS/auth errors):**
+  - Verify image URL is reachable from cluster nodes/importer pods.
+  - Verify TLS trust chain for internal endpoints.
+  - Verify credentials/proxy/network policy for artifact endpoints.
+- **Strict mode failures (`govcloud_strict_mode = true`):**
+  - Ensure image/artifact URLs begin with one of `strict_allowed_url_prefixes`.
+  - Ensure prefixes use HTTPS.
+- **Preflight check failures:**
+  - Ensure the Coder/Terraform execution environment has network access to required URLs.
+  - Temporarily disable with `enable_preflight_url_checks = false` only for emergency diagnostics.
+
+Useful workflow:
+
+1. Inspect DataVolume status/events and importer pod logs.
+2. Validate URL reachability from both Terraform runtime and cluster runtime.
+3. Re-run with corrected URLs/prefixes.
 
 ## Defaults
 

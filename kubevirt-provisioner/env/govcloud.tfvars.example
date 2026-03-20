@@ -1,5 +1,12 @@
 deployment_environment = "govcloud"
 
+# Enable strict policy enforcement for approved source domains.
+govcloud_strict_mode      = true
+enable_preflight_url_checks = true
+strict_allowed_url_prefixes = [
+  "https://artifacts.example.mil/",
+]
+
 # For restricted/air-gapped GovCloud environments, point these to
 # approved internal artifact locations.
 code_server_download_base_url = "https://artifacts.example.mil/code-server/releases/download"
